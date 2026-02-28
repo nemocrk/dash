@@ -12,24 +12,13 @@
 #include <QCameraViewfinder>
 #include <QCameraViewfinderSettings>
 
+#ifdef USE_GST
 #include <gst/gst.h>
 #include <gst/app/gstappsrc.h>
 #include <gst/app/gstappsink.h>
 #include <gst/video/video.h>
-#include <QGlib/Error>
-#include <QGlib/Connect>
-#include <QGst/Init>
-#include <QGst/Bus>
-#include <QGst/Pipeline>
-#include <QGst/Parse>
-#include <QGst/Message>
-#include <QGst/Utils/ApplicationSink>
-#include <QGst/Utils/ApplicationSource>
-#include <QGst/Ui/VideoWidget>
-#include <QGst/ElementFactory>
-#include <QGst/Quick/VideoSurface>
-#include <QtQml/QQmlContext>
-#include <QtQuickWidgets/QQuickWidget>
+#include <gst/video/videooverlay.h>
+#endif
 
 #include "app/config.hpp"
 #include "DashLog.hpp"
@@ -105,19 +94,23 @@ class CameraPage : public QWidget, public Page {
 
     bool connected = false;
 
+#ifdef USE_GST
     void init_gstreamer_pipeline(std::string vidLaunchStr_, bool sync = false);
     void disconnect_stream();
 
     static GstPadProbeReturn convertProbe(GstPad *pad, GstPadProbeInfo *info, void *);
     static gboolean busCallback(GstBus *, GstMessage *message, gpointer *);
+#else
+    void disconnect_stream();
+#endif
     void showEvent(QShowEvent *event);
 
-    QGst::ElementPtr videoSink_;
-    QQuickWidget *videoWidget_;
+    QWidget *videoWidget_;
+#ifdef USE_GST
     GstElement *vidPipeline_;
     GstAppSrc *vidSrc_;
+#endif
     QWidget *videoContainer_;
-    QGst::Quick::VideoSurface *surface_;
 
    signals:
     void connected_network();

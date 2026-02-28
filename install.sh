@@ -1,9 +1,57 @@
 #!/bin/bash
 
+# Resolve submodule URL from .gitmodules when available.
+get_submodule_url() {
+  local submodule_path="$1"
+  local gitmodules_file
+  gitmodules_file="$(dirname "$(realpath -s "$0")")/.gitmodules"
+
+  if [ -f "$gitmodules_file" ]; then
+    local submodule_name
+    submodule_name="$(git config -f "$gitmodules_file" --get-regexp '^submodule\..*\.path$' \
+      | awk -v p="$submodule_path" '$2==p {print $1}' \
+      | sed -e 's/^submodule\.//' -e 's/\.path$//' \
+      | head -n1)"
+    if [ -n "$submodule_name" ]; then
+      git config -f "$gitmodules_file" --get "submodule.${submodule_name}.url"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+# Clone repo only if missing; update if already present.
+ensure_repo() {
+  local repo_url="$1"
+  local repo_dir="$2"
+
+  if [ -d "$repo_dir" ] && git -C "$repo_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "Repo già presente: $repo_dir"
+    local before_rev
+    local after_rev
+    before_rev="$(cd "$repo_dir" && git rev-parse HEAD 2>/dev/null || echo "")"
+    (cd "$repo_dir" && git pull --ff-only "$repo_url" || true)
+    after_rev="$(cd "$repo_dir" && git rev-parse HEAD 2>/dev/null || echo "")"
+    if [ -n "$BUILD_MARKER" ] && [ "$before_rev" != "$after_rev" ]; then
+      rm -f "$repo_dir/$BUILD_MARKER"
+      echo "Repository aggiornato: marker build invalidato ($repo_dir/$BUILD_MARKER)."
+    fi
+    return 0
+  fi
+
+  if [ -d "$repo_dir" ]; then
+    echo "Cartella $repo_dir esiste ma non è una worktree git valida, skip clone."
+    return 1
+  fi
+
+  git clone "$repo_url" "$repo_dir"
+}
+
 #repo addresses
-aasdkRepo="https://github.com/OpenDsh/aasdk"
+aasdkRepo="$(get_submodule_url "third_party/aasdk" || echo "https://github.com/nemocrk/aasdk.git")"
 gstreamerRepo="https://github.com/GStreamer/qt-gstreamer"
-openautoRepo="https://github.com/openDsh/openauto"
+openautoRepo="$(get_submodule_url "third_party/openauto" || echo "https://github.com/nemocrk/openauto.git")"
 h264bitstreamRepo="https://github.com/aizvorski/h264bitstream"
 pulseaudioRepo="https://gitlab.freedesktop.org/pulseaudio/pulseaudio.git"
 
@@ -139,6 +187,9 @@ fi
 
 script_path=$(dirname "$(realpath -s "$0")")
 echo "Script directory is $script_path"
+THIRD_PARTY_DIR="$script_path/third_party"
+mkdir -p "$THIRD_PARTY_DIR"
+BUILD_MARKER=".dash_build_ok"
 
 installArgs="-DCMAKE_BUILD_TYPE=${BUILD_TYPE} $installArgs"
 
@@ -155,6 +206,8 @@ dependencies=(
 "libqt5multimedia5"
 "libqt5multimedia5-plugins"
 "libqt5multimediawidgets5"
+"qtbase5-dev"
+"qtbase5-dev-tools"
 "qtmultimedia5-dev"
 "libqt5bluetooth5"
 "libqt5bluetooth5-bin"
@@ -174,6 +227,9 @@ dependencies=(
 "gstreamer1.0-alsa"
 "libgstreamer-plugins-base1.0-dev"
 "qtdeclarative5-dev"
+"qtdeclarative5-dev-tools"
+"qml-module-qtquick-window2"
+"qml-module-qtquick-controls2"
 "libgstreamer-plugins-bad1.0-dev"
 "libunwind-dev"
 "qml-module-qtmultimedia"
@@ -225,29 +281,33 @@ fi
 if [ $pulseaudio = false ]
   then
     echo -e skipping pulseaudio '\n'
-  else
-    #change to project root
-    cd $script_path
+else
+  cd "$THIRD_PARTY_DIR"
     
-    echo Preparing to compile and install pulseaudio
-    echo Grabbing pulseaudio deps
-    sudo sed -i 's/#deb-src/deb-src/g' /etc/apt/sources.list
-    sudo apt-get update -y
-    git clone $pulseaudioRepo
-    sudo apt-get install -y autopoint
-    cd pulseaudio
-    git checkout tags/v12.99.3
+  echo Preparing to compile and install pulseaudio
+  if [ -f "$THIRD_PARTY_DIR/pulseaudio/$BUILD_MARKER" ]; then
+    echo "Pulseaudio già compilato in precedenza, skip build."
+  else
+  echo Grabbing pulseaudio deps
+  sudo sed -i 's/#deb-src/deb-src/g' /etc/apt/sources.list
+  sudo apt-get update -y
+  ensure_repo "$pulseaudioRepo" "$THIRD_PARTY_DIR/pulseaudio"
+  sudo apt-get install -y autopoint
+  cd "$THIRD_PARTY_DIR/pulseaudio"
+    git checkout tags/v17.0
     echo Applying imtu patch
     sed -i 's/*imtu = 48;/*imtu = 60;/g' src/modules/bluetooth/backend-native.c
     sed -i 's/*imtu = 48;/*imtu = 60;/g' src/modules/bluetooth/backend-ofono.c
     sudo apt-get build-dep -y pulseaudio
     ./bootstrap.sh
-    make -j4
+    make -j$(nproc)
     sudo make install
-    sudo ldconfig
-    # copy configs and force an exit 0 just in case files are identical (we don't care but it will make pimod exit)
-    sudo cp /usr/share/pulseaudio/alsa-mixer/profile-sets/* /usr/local/share/pulseaudio/alsa-mixer/profile-sets/
-    cd ..
+  sudo ldconfig
+  # copy configs and force an exit 0 just in case files are identical (we don't care but it will make pimod exit)
+  sudo cp /usr/share/pulseaudio/alsa-mixer/profile-sets/* /usr/local/share/pulseaudio/alsa-mixer/profile-sets/
+  touch "$THIRD_PARTY_DIR/pulseaudio/$BUILD_MARKER"
+  cd "$THIRD_PARTY_DIR"
+  fi
 fi
 
 
@@ -282,332 +342,329 @@ if [ $bluez = false ]
   then
     echo -e skipping bluez '\n'
   else
-    #change to project root
-    cd $script_path
+    cd "$THIRD_PARTY_DIR"
 
     echo Installing bluez
+    if [ -f "$THIRD_PARTY_DIR/bluez-5.86/$BUILD_MARKER" ]; then
+      echo "BlueZ già compilato in precedenza, skip build."
+      cd "$script_path"
+    else
     sudo apt-get install -y libdbus-1-dev libudev-dev libical-dev libreadline-dev libjson-c-dev
-    wget www.kernel.org/pub/linux/bluetooth/bluez-5.63.tar.xz
-    tar -xvf bluez-5.63.tar.xz bluez-5.63/
-    rm bluez-5.63.tar.xz
-    cd bluez-5.63
+    if [ ! -f "$THIRD_PARTY_DIR/bluez-5.86.tar.xz" ]; then
+      wget www.kernel.org/pub/linux/bluetooth/bluez-5.86.tar.xz
+    fi
+    rm -rf "$THIRD_PARTY_DIR/bluez-5.86"
+    tar -xvf bluez-5.86.tar.xz bluez-5.86/
+    rm bluez-5.86.tar.xz
+    cd bluez-5.86
     ./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --enable-library --disable-manpages --enable-deprecated
-    make
+    make -j$(nproc)
     sudo make install
-    cd ..
+    touch "$THIRD_PARTY_DIR/bluez-5.86/$BUILD_MARKER"
+    cd "$script_path"
+    fi
 fi
 
 ###############################  AASDK #########################
 if [ $aasdk = false ]; then
 	echo -e Skipping aasdk '\n'
 else
-  #change to project root
-  cd $script_path
+  cd "$THIRD_PARTY_DIR"
 
-  #clone aasdk
-  git clone $aasdkRepo
-  if [[ $? -eq 0 ]]; then
-    echo -e Aasdk Cloned ok '\n'
+  # clone/update aasdk
+  ensure_repo "$aasdkRepo" "$THIRD_PARTY_DIR/aasdk"
+  if [[ $? -ne 0 ]]; then
+    echo Aasdk clone/pull error
+    exit 1
+  fi
+
+  if [ -f "$THIRD_PARTY_DIR/aasdk/$BUILD_MARKER" ]; then
+    echo "AASDK già compilato in precedenza, skip build."
+    cd "$script_path"
   else
-    cd aasdk
+    #change into aasdk folder
+    echo -e moving to aasdk '\n'
+    cd "$THIRD_PARTY_DIR/aasdk"
+
+    #apply set_FIPS_mode patch
+    echo Apply set_FIPS_mode patch
+    git apply $script_path/patches/aasdk_openssl-fips-fix.patch
+
+    #create build directory
+    echo Creating aasdk build directory
+    mkdir build
+
     if [[ $? -eq 0 ]]; then
-      git pull $aasdkRepo
-      echo -e Aasdk Cloned OK '\n'
-      cd ..
+      echo -e aasdk build directory made
     else
-      echo Aasdk clone/pull error
+      echo Unable to create aasdk build directory assuming it exists...
+    fi
+
+    cd build
+
+    #beginning cmake
+    cmake -DCMAKE_BUILD_TYPE=Release ../
+    if [[ $? -eq 0 ]]; then
+        echo -e Aasdk CMake completed successfully'\n'
+    else
+      echo Aasdk CMake failed with code $?
       exit 1
     fi
+
+    #beginning make
+    make -j$(nproc)
+
+    if [[ $? -eq 0 ]]; then
+      echo -e Aasdk Make completed successfully '\n'
+    else
+      echo Aasdk Make failed with code $?
+      exit 1
+    fi
+
+    #begin make install
+    sudo make install
+
+    if [[ $? -eq 0 ]]
+      then
+      echo -e Aasdk installed ok'\n'
+      echo
+    else
+      echo Aasdk install failed with code $?
+      exit 1
+    fi
+    touch "$THIRD_PARTY_DIR/aasdk/$BUILD_MARKER"
+    cd "$script_path"
   fi
-
-  #change into aasdk folder
-  echo -e moving to aasdk '\n'
-  cd aasdk
-
-  #apply set_FIPS_mode patch
-  echo Apply set_FIPS_mode patch
-  git apply $script_path/patches/aasdk_openssl-fips-fix.patch
-
-  #create build directory
-  echo Creating aasdk build directory
-  mkdir build
-
-  if [[ $? -eq 0 ]]; then
-    echo -e aasdk build directory made
-  else
-    echo Unable to create aasdk build directory assuming it exists...
-  fi
-
-  cd build
-
-  #beginning cmake
-  cmake -DCMAKE_BUILD_TYPE=Release ../
-  if [[ $? -eq 0 ]]; then
-      echo -e Aasdk CMake completed successfully'\n'
-  else
-    echo Aasdk CMake failed with code $?
-    exit 1
-  fi
-
-  #beginning make
-  make -j2
-
-  if [[ $? -eq 0 ]]; then
-    echo -e Aasdk Make completed successfully '\n'
-  else
-    echo Aasdk Make failed with code $?
-    exit 1
-  fi
-
-  #begin make install
-  sudo make install
-
-  if [[ $? -eq 0 ]]
-    then
-    echo -e Aasdk installed ok'\n'
-    echo
-  else
-    echo Aasdk install failed with code $?
-    exit 1
-  fi
-  cd $script_path
 fi
 
 ############################### h264bitstream #########################
 if [ $h264bitstream = false ]; then
 	echo -e Skipping h264bitstream '\n'
 else
-  #change to project root
-  cd $script_path
+  cd "$THIRD_PARTY_DIR"
 
-  #clone h264bitstream
-  git clone $h264bitstreamRepo
-  if [[ $? -eq 0 ]]; then
-    echo -e h264bitstream Cloned ok '\n'
+  #clone/update h264bitstream
+  ensure_repo "$h264bitstreamRepo" "$THIRD_PARTY_DIR/h264bitstream"
+  if [[ $? -ne 0 ]]; then
+    echo h264bitstream clone/pull error
+    exit 1
+  fi
+
+  if [ -f "$THIRD_PARTY_DIR/h264bitstream/$BUILD_MARKER" ]; then
+    echo "h264bitstream già compilato in precedenza, skip build."
+    cd "$script_path"
   else
-    cd h264bitstream
+    #change into folder
+    echo -e moving to h264bitstream '\n'
+    cd "$THIRD_PARTY_DIR/h264bitstream"
+
+    echo Auto-reconfigure project
+    autoreconf -i
+
     if [[ $? -eq 0 ]]; then
-      git pull $h264bitstreamRepo
-      echo -e h264bitstream Cloned OK '\n'
-      cd ..
+      echo -e autoreconfed h264bitstream
     else
-      echo h264bitstream clone/pull error
+      echo Unable to autoreconf h264bitstream
       exit 1
     fi
+
+    echo Configuring h264bitstream
+
+    ./configure --prefix=/usr/local
+    if [[ $? -eq 0 ]]; then
+        echo -e h264bitstream configured successfully'\n'
+    else
+      echo h264bitstream configure failed with code $?
+      exit 1
+    fi
+
+    #beginning make
+    make
+
+    if [[ $? -eq 0 ]]; then
+      echo -e h264bitstream Make completed successfully '\n'
+    else
+      echo h264bitstream Make failed with code $?
+      exit 1
+    fi
+
+    #begin make install
+    sudo make install
+
+    if [[ $? -eq 0 ]]
+      then
+      echo -e h264bitstream installed ok'\n'
+      echo
+    else
+      echo h264bitstream install failed with code $?
+      exit 1
+    fi
+    touch "$THIRD_PARTY_DIR/h264bitstream/$BUILD_MARKER"
+    cd "$script_path"
   fi
-
-  #change into folder
-  echo -e moving to h264bitstream '\n'
-  cd h264bitstream
-
-  echo Auto-reconfigure project
-  autoreconf -i
-
-  if [[ $? -eq 0 ]]; then
-    echo -e autoreconfed h264bitstream
-  else
-    echo Unable to autoreconf h264bitstream
-    exit 1
-  fi
-
-  echo Configuring h264bitstream
-
-  ./configure --prefix=/usr/local
-  if [[ $? -eq 0 ]]; then
-      echo -e h264bitstream configured successfully'\n'
-  else
-    echo h264bitstream configure failed with code $?
-    exit 1
-  fi
-
-  #beginning make
-  make
-
-  if [[ $? -eq 0 ]]; then
-    echo -e h264bitstream Make completed successfully '\n'
-  else
-    echo h264bitstream Make failed with code $?
-    exit 1
-  fi
-
-  #begin make install
-  sudo make install
-
-  if [[ $? -eq 0 ]]
-    then
-    echo -e h264bitstream installed ok'\n'
-    echo
-  else
-    echo h264bitstream install failed with code $?
-    exit 1
-  fi
-  cd $script_path
 fi
 
-###############################  gstreamer  #########################
-#check if gstreamer install is requested
-if [ $gstreamer = true ]; then
-  echo installing gstreamer
-
-  #change to project root
-  cd $script_path
-
-  #clone gstreamer
-  echo Cloning Gstreamer
-  git clone $gstreamerRepo
-  if [[ $? -eq 0 ]]; then
-    echo -e Gstreamer cloned OK
-  else
-    cd qt-gstreamer
-      if [[ $? -eq 0 ]]; then
-        git pull $gstreamerRepo
-        echo -e cloned OK '\n'
-        cd ..
-      else
-        echo Gstreamer clone/pull error
-        exit 1
-      fi
-  fi
-
-  #change into newly cloned directory
-  cd qt-gstreamer
-
-  if [ $BULLSEYE = true ] || [ $JAMMY = true ]; then
-    #apply 1.18 patch
-    echo Applying qt-gstreamer 1.18 patch
-    git apply $script_path/patches/qt-gstreamer-1.18.patch
-  fi
-
-  #apply greenline patch
-  echo Apply greenline patch
-  git apply $script_path/patches/greenline_fix.patch
-
-  #apply atomic patch
-  echo Apply atomic patch
-  git apply $script_path/patches/qt-gstreamer_atomic-load.patch
-
-  #create build directory
-  echo Creating Gstreamer build directory
-  mkdir build
-
-  if [[ $? -eq 0 ]]; then
-    echo -e Gstreamer build directory made
-  else
-    echo Unable to create Gstreamer build directory assuming it exists...
-  fi
-
-  cd build
-
-  #run cmake
-  echo Beginning cmake
-  cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH) -DCMAKE_INSTALL_INCLUDEDIR=include -DQT_VERSION=5 -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-std=c++11
-
-  if [[ $? -eq 0 ]]; then
-    echo -e Make ok'\n'
-  else
-    echo Gstreamer CMake failed
-    exit 1
-  fi
-
-  echo Making Gstreamer
-  make
-
-  if [[ $? -eq 0 ]]; then
-    echo -e Gstreamer make ok'\n'
-  else
-    echo Make failed with error code $?
-    exit 1
-  fi
-
-  #run make install
-  echo Beginning make install
-  sudo make install
-
-  if [[ $? -eq 0 ]]; then
-    echo -e Gstreamer installed ok'\n'
-  else
-    echo Gstreamer make install failed with error code $?
-    exit 1
-  fi
-
-  sudo ldconfig
-  cd $script_path
-
-else
-	echo -e Skipping Gstreamer'\n'
-fi
-
-
-
+################################  gstreamer  #########################
+##check if gstreamer install is requested
+#if [ $gstreamer = true ]; then
+#  echo installing gstreamer
+#
+#  cd "$THIRD_PARTY_DIR"
+#
+#  #clone/update gstreamer
+#  echo Cloning Gstreamer
+#  ensure_repo "$gstreamerRepo" "$THIRD_PARTY_DIR/qt-gstreamer"
+#  if [[ $? -ne 0 ]]; then
+#    echo Gstreamer clone/pull error
+#    exit 1
+#  fi
+#
+#  if [ -f "$THIRD_PARTY_DIR/qt-gstreamer/$BUILD_MARKER" ]; then
+#    echo "qt-gstreamer già compilato in precedenza, skip build."
+#    cd "$script_path"
+#  else
+#    echo -e Gstreamer cloned/updated OK
+#
+#    #change into newly cloned directory
+#    cd "$THIRD_PARTY_DIR/qt-gstreamer"
+#
+#    if [ $BULLSEYE = true ] || [ $JAMMY = true ]; then
+#      #apply 1.18 patch
+#      echo Applying qt-gstreamer 1.18 patch
+#      git apply $script_path/patches/qt-gstreamer-1.18.patch
+#    fi
+#
+#    #apply greenline patch
+#    echo Apply greenline patch
+#    git apply $script_path/patches/greenline_fix.patch
+#
+#    #apply atomic patch
+#    echo Apply atomic patch
+#    git apply $script_path/patches/qt-gstreamer_atomic-load.patch
+#
+#    #create build directory
+#    echo Creating Gstreamer build directory
+#    mkdir build
+#
+#    if [[ $? -eq 0 ]]; then
+#      echo -e Gstreamer build directory made
+#    else
+#      echo Unable to create Gstreamer build directory assuming it exists...
+#    fi
+#
+#    cd build
+#
+#    #run cmake
+#    echo Beginning cmake
+#    cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH) -DCMAKE_INSTALL_INCLUDEDIR=include -DQT_VERSION=5 -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-std=c++11
+#
+#    if [[ $? -eq 0 ]]; then
+#      echo -e Make ok'\n'
+#    else
+#      echo Gstreamer CMake failed
+#      exit 1
+#    fi
+#
+#    echo Making Gstreamer
+#    make
+#
+#    if [[ $? -eq 0 ]]; then
+#      echo -e Gstreamer make ok'\n'
+#    else
+#      echo Make failed with error code $?
+#      exit 1
+#    fi
+#
+#    #run make install
+#    echo Beginning make install
+#    sudo make install
+#
+#    if [[ $? -eq 0 ]]; then
+#      echo -e Gstreamer installed ok'\n'
+#    else
+#      echo Gstreamer make install failed with error code $?
+#      exit 1
+#    fi
+#
+#    sudo ldconfig
+#    touch "$THIRD_PARTY_DIR/qt-gstreamer/$BUILD_MARKER"
+#    cd "$script_path"
+#  fi
+#
+#else
+#	echo -e Skipping Gstreamer'\n'
+#fi
+#
+#
+#
 ###############################  openauto  #########################
 if [ $openauto = false ]; then
   echo -e skipping openauto'\n'
 else
   echo Installing openauto
 
-  #change to project root
-  cd $script_path
+  cd "$THIRD_PARTY_DIR"
 
-  #clone openauto
+  #clone/update openauto
   echo -e cloning openauto'\n'
-  git clone $openautoRepo
-  if [[ $? -eq 0 ]]; then
-    echo -e cloned OK'\n'
+  ensure_repo "$openautoRepo" "$THIRD_PARTY_DIR/openauto"
+  if [[ $? -ne 0 ]]; then
+    echo Openauto clone/pull error
+    exit 1
+  fi
+
+  if [ -f "$THIRD_PARTY_DIR/openauto/$BUILD_MARKER" ]; then
+    echo "OpenAuto già compilato in precedenza, skip build."
+    cd "$script_path"
   else
-    cd openauto
+    cd "$THIRD_PARTY_DIR/openauto"
+
+#    #create build directory
+#    echo Creating openauto build directory
+#    mkdir build
+#
+#    if [[ $? -eq 0 ]]; then
+#      echo -e openauto build directory made
+#    else
+#      echo Unable to create openauto build directory assuming it exists...
+#    fi
+#
+#    
+#    cd build
+#
+#    echo Beginning openauto cmake
+#    cmake ${installArgs} -DGST_BUILD=true ../
+#    if [[ $? -eq 0 ]]; then
+#      echo -e Openauto CMake OK'\n'
+#    else
+#      echo Openauto CMake failed with error code $?
+#      exit 1
+#    fi
+#
+#    echo Beginning openauto make
+#    make
+    ./build.sh
+
     if [[ $? -eq 0 ]]; then
-      git pull $openautoRepo
-      echo -e Openauto cloned OK'\n'
-      cd ..
+      echo -e Openauto make OK'\n'
     else
-      echo Openauto clone/pull error
+      echo Openauto make failed with error code $?
       exit 1
     fi
+
+#    #run make install
+#    echo Beginning make install
+#    sudo make install
+#    if [[ $? -eq 0 ]]; then
+#      echo -e Openauto installed ok'\n'
+#    else
+#      echo Openauto make install failed with error code $?
+#      exit 1
+#    fi
+    
+    touch "$THIRD_PARTY_DIR/openauto/$BUILD_MARKER"
+    cd "$script_path"
   fi
-
-  cd openauto
-
-  #create build directory
-  echo Creating openauto build directory
-  mkdir build
-
-  if [[ $? -eq 0 ]]; then
-    echo -e openauto build directory made
-  else
-    echo Unable to create openauto build directory assuming it exists...
-  fi
-
-  cd build
-
-  echo Beginning openauto cmake
-  cmake ${installArgs} -DGST_BUILD=true ../
-  if [[ $? -eq 0 ]]; then
-    echo -e Openauto CMake OK'\n'
-  else
-    echo Openauto CMake failed with error code $?
-    exit 1
-  fi
-
-  echo Beginning openauto make
-  make
-
-  if [[ $? -eq 0 ]]; then
-    echo -e Openauto make OK'\n'
-  else
-    echo Openauto make failed with error code $?
-    exit 1
-  fi
-
-  #run make install
-  echo Beginning make install
-  sudo make install
-  if [[ $? -eq 0 ]]; then
-    echo -e Openauto installed ok'\n'
-  else
-    echo Openauto make install failed with error code $?
-    exit 1
-  fi
-  cd $script_path
 fi
 
 
@@ -642,7 +699,7 @@ else
   fi
 
   echo Running Dash make
-  make
+  make -j$(nproc)
   
   if [[ $? -eq 0 ]]; then
       echo -e Dash make ok, executable can be found ../bin/dash

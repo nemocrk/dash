@@ -20,7 +20,7 @@ set(Boost_USE_MULTITHREADED ON)
 set(Boost_USE_STATIC_RUNTIME OFF)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake_modules/")
-SET(CMAKE_CXX_STANDARD 14)
+SET(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXE_LINKER_FLAGS ${CMAKE_EXE_LINKER_FLAGS} -rdynamic)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS_INIT} -Wall -pedantic -fPIC")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
@@ -51,7 +51,6 @@ if(RPI_BUILD AND NOT GST_BUILD)
     set(ILCLIENT_LIBRARIES "/opt/vc/src/hello_pi/libs/ilclient/libilclient.a;/opt/vc/lib/libvcos.so;/opt/vc/lib/libvcilcs.a;/opt/vc/lib/libvchiq_arm.so")
 endif(RPI_BUILD AND NOT GST_BUILD)
 if(GST_BUILD)
-    find_package(Qt5GStreamer)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(GST REQUIRED
         gstreamer-1.0>=1.4
@@ -112,7 +111,6 @@ target_include_directories(dash SYSTEM PRIVATE
     ${BCM_HOST_INCLUDE_DIRS}
     ${ILCLIENT_INCLUDE_DIRS}
     ${GST_INCLUDE_DIRS}
-    ${QTGSTREAMER_INCLUDE_DIR}
     ${TAGLIB_INCLUDE_DIRS}
     ${include_directory}
     )
@@ -139,15 +137,7 @@ target_link_libraries(dash
     ${WINSOCK2_LIBRARIES}
     ${RTAUDIO_LIBRARIES}
     ${GST_LIBRARIES}
-    ${QTGLIB_LIBRARY}
-    ${QTGLIB_LIBRARIES}
-    ${QTGSTREAMER_LIBRARY}
-    ${QTGSTREAMER_LIBRARIES}
-    ${QTGSTREAMER_UI_LIBRARY}
-    ${QTGSTREAMER_UI_LIBRARIES}
     ${Qt5QuickWidgets_LIBRARIES}
-    ${QTGSTREAMER_QUICK_LIBRARIES}
-    ${QTGSTREAMER_QUICK_LIBRARY}
     ${TAGLIB_LIBRARIES}
     )
 

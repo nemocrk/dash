@@ -63,16 +63,12 @@ void CameraPage::showEvent(QShowEvent *event)
         this->connect_cam();
 }
 
+#ifdef USE_GST
 void CameraPage::init_gstreamer_pipeline(std::string desc, bool sync)
 {
-    videoWidget_ = new QQuickWidget(videoContainer_);
-
-    surface_ = new QGst::Quick::VideoSurface;
-    videoWidget_->rootContext()->setContextProperty(QLatin1String("videoSurface"), surface_);
-    videoWidget_->setSource(QUrl("qrc:/camera_video.qml"));
-    videoWidget_->setResizeMode(QQuickWidget::SizeRootObjectToView);
-
-    videoSink_ = surface_->videoSink();
+    videoWidget_ = new QWidget(videoContainer_);
+    videoWidget_->setAttribute(Qt::WA_NativeWindow);
+    videoWidget_->setAutoFillBackground(false);
 
     GError *error = nullptr;
     std::string pipeline = desc;
@@ -86,23 +82,28 @@ void CameraPage::init_gstreamer_pipeline(std::string desc, bool sync)
     }
     pipeline = pipeline +
                " ! videoconvert " +
-               " ! capsfilter caps=video/x-raw name=mycapsfilter";
+               " ! capsfilter caps=video/x-raw name=mycapsfilter"
+               " ! autovideosink name=myvideosink";
     DASH_LOG(info) << "[CameraPage] Created GStreamer Pipeline of `" << pipeline << "`";
     vidPipeline_ = gst_parse_launch(pipeline.c_str(), &error);
     GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(vidPipeline_));
     gst_bus_add_watch(bus, (GstBusFunc)&CameraPage::busCallback, this);
     gst_object_unref(bus);
 
-    GstElement *sink = QGlib::RefPointer<QGst::Element>(videoSink_);
+    GstElement *sink = gst_bin_get_by_name(GST_BIN(vidPipeline_), "myvideosink");
+    if (sink == nullptr) {
+        DASH_LOG(error) << "[CameraPage] Failed to get myvideosink from pipeline";
+        return;
+    }
     g_object_set(sink, "force-aspect-ratio", false, nullptr);
     g_object_set(sink, "sync", sync, nullptr);
-
     g_object_set(sink, "async", false, nullptr);
-
-    GstElement *capsFilter = gst_bin_get_by_name(GST_BIN(vidPipeline_), "mycapsfilter");
-    gst_bin_add(GST_BIN(vidPipeline_), GST_ELEMENT(sink));
-    gst_element_link(capsFilter, GST_ELEMENT(sink));
+    if (GST_IS_VIDEO_OVERLAY(sink)) {
+        gst_video_overlay_set_window_handle(GST_VIDEO_OVERLAY(sink), (guintptr)videoWidget_->winId());
+    }
+    gst_object_unref(sink);
 }
+#endif
 
 QWidget *CameraPage::connect_widget()
 {
@@ -497,6 +498,10 @@ QWidget *CameraPage::network_cam_selector()
 
 void CameraPage::connect_network_stream()
 {
+#ifndef USE_GST
+    this->status->setText("Network camera richiede build con GStreamer");
+    return;
+#else
     videoContainer_ = this->remote_video_widget;
 
     DASH_LOG(info) << "[CameraPage] Creating GStreamer pipeline with " << this->config->get_cam_network_url().toStdString();
@@ -526,8 +531,10 @@ void CameraPage::connect_network_stream()
     GstPad *convertPad = gst_element_get_static_pad(capsFilter, "sink");
     gst_pad_add_probe(convertPad, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, &CameraPage::convertProbe, this, nullptr);
     gst_element_set_state(vidPipeline_, GST_STATE_PLAYING);
+#endif
 }
 
+#ifdef USE_GST
 GstPadProbeReturn CameraPage::convertProbe(GstPad *pad, GstPadProbeInfo *info, void *)
 {
     GstEvent *event = GST_PAD_PROBE_INFO_EVENT(info);
@@ -547,9 +554,18 @@ GstPadProbeReturn CameraPage::convertProbe(GstPad *pad, GstPadProbeInfo *info, v
 
     return GST_PAD_PROBE_OK;
 }
+#endif
 
 void CameraPage::disconnect_stream()
 {
+#ifndef USE_GST
+    if (this->config->get_cam_autoconnect()) {
+        this->reconnect_message = this->status->text() + " - reconnecting in %1 ";
+        this->reconnect_in_secs = this->config->get_cam_autoconnect_time_secs();
+        this->reconnect_timer->start(1000);
+    }
+    this->connected = false;
+#else
     DASH_LOG(info) << "[CameraPage] Disconnecting camera and destroying gstreamer pipeline";
     GstElement *capsFilter = gst_bin_get_by_name(GST_BIN(vidPipeline_), "mycapsfilter");
     GstPad *convertPad = gst_element_get_static_pad(capsFilter, "sink");
@@ -563,10 +579,15 @@ void CameraPage::disconnect_stream()
         this->reconnect_timer->start(1000);
     }
     this->connected = false;
+#endif
 }
 
 void CameraPage::connect_local_stream()
 {
+#ifndef USE_GST
+    this->status->setText("Local camera richiede build con GStreamer");
+    return;
+#else
     this->videoContainer_ = this->local_video_widget;
     if (this->local_cam != nullptr) {
         delete this->local_cam;
@@ -607,8 +628,10 @@ void CameraPage::connect_local_stream()
     GstPad *convertPad = gst_element_get_static_pad(capsFilter, "sink");
     gst_pad_add_probe(convertPad, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, &CameraPage::convertProbe, this, nullptr);
     gst_element_set_state(vidPipeline_, GST_STATE_PLAYING);
+#endif
 }
 
+#ifdef USE_GST
 gboolean CameraPage::busCallback(GstBus *, GstMessage *message, gpointer *)
 {
     gchar *debug;
@@ -640,6 +663,7 @@ gboolean CameraPage::busCallback(GstBus *, GstMessage *message, gpointer *)
 
     return TRUE;
 }
+#endif
 
 QSize CameraPage::choose_video_resolution()
 {

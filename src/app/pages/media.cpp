@@ -71,9 +71,9 @@ QWidget *BluetoothPlayerTab::track_widget()
         title->setText(track.title());
     });
     connect(aa_handler, &AAHandler::aa_media_metadata_update, [artist, album, title, albumArt](const aasdk::proto::messages::MediaInfoChannelMetadataData& metadata){
-        title->setText(QString::fromStdString(metadata.track_name()));
-        if(metadata.has_artist_name()) artist->setText(QString::fromStdString(metadata.artist_name()));
-        if(metadata.has_album_name()) album->setText(QString::fromStdString(metadata.album_name()));
+        if(metadata.has_song()) title->setText(QString::fromStdString(metadata.song()));
+        if(metadata.has_artist()) artist->setText(QString::fromStdString(metadata.artist()));
+        if(metadata.has_album()) album->setText(QString::fromStdString(metadata.album()));
         if(metadata.has_album_art()){
             QImage art;
             art.loadFromData(QByteArray::fromStdString(metadata.album_art()));

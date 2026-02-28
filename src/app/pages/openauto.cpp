@@ -1,9 +1,12 @@
 #include "app/pages/openauto.hpp"
 
+#include <QCoreApplication>
+
 #include "app/config.hpp"
 #include "app/widgets/progress.hpp"
 #include "app/window.hpp"
 #include "DashLog.hpp"
+#include <f1x/openauto/autoapp/Service/Callbacks.hpp>
 
 OpenAutoWorker::OpenAutoWorker(std::function<void(bool)> callback, bool night_mode, QWidget *frame, Arbiter &arbiter)
     : QObject(qApp),
@@ -25,15 +28,48 @@ OpenAutoWorker::OpenAutoWorker(std::function<void(bool)> callback, bool night_mo
     this->create_usb_workers();
     this->create_io_service_workers();
 
-    this->app->waitForDevice(true);
+    this->app->waitForUSBDevice();
     AAHandler *aa_handler = arbiter.android_auto().handler;
     service_factory.setAndroidAutoInterface(aa_handler);
     aa_handler->setServiceFactory(&service_factory);
+
+    f1x::openauto::autoapp::service::setEventCallbacks({
+        [aa_handler](const aap_protobuf::service::mediaplayback::message::MediaPlaybackMetadata& metadata) {
+            QMetaObject::invokeMethod(
+                qApp,
+                [aa_handler, metadata]() { aa_handler->mediaMetadataUpdate(metadata); },
+                Qt::QueuedConnection);
+        },
+        [aa_handler](const aap_protobuf::service::mediaplayback::message::MediaPlaybackStatus& playback) {
+            QMetaObject::invokeMethod(
+                qApp,
+                [aa_handler, playback]() { aa_handler->mediaPlaybackUpdate(playback); },
+                Qt::QueuedConnection);
+        },
+        [aa_handler](const aap_protobuf::service::navigationstatus::message::NavigationStatus& status) {
+            QMetaObject::invokeMethod(
+                qApp,
+                [aa_handler, status]() { aa_handler->navigationStatusUpdate(status); },
+                Qt::QueuedConnection);
+        },
+        [aa_handler](const aap_protobuf::service::navigationstatus::message::NavigationNextTurnEvent& turnEvent) {
+            QMetaObject::invokeMethod(
+                qApp,
+                [aa_handler, turnEvent]() { aa_handler->navigationTurnEvent(turnEvent); },
+                Qt::QueuedConnection);
+        },
+        [aa_handler](const aap_protobuf::service::navigationstatus::message::NavigationNextTurnDistanceEvent& distanceEvent) {
+            QMetaObject::invokeMethod(
+                qApp,
+                [aa_handler, distanceEvent]() { aa_handler->navigationDistanceEvent(distanceEvent); },
+                Qt::QueuedConnection);
+        }});
 }
 
 
 OpenAutoWorker::~OpenAutoWorker()
 {
+    f1x::openauto::autoapp::service::setEventCallbacks({});
     std::for_each(this->thread_pool.begin(), this->thread_pool.end(),
                   std::bind(&std::thread::join, std::placeholders::_1));
     libusb_exit(this->usb_context);
@@ -270,9 +306,9 @@ QLayout *OpenAutoPage::Settings::audio_channels_row_widget()
     group_layout->addStretch(2);
 
     QCheckBox *speech_button = new QCheckBox("Speech", group);
-    speech_button->setChecked(this->config->openauto_config->speechAudioChannelEnabled());
+    speech_button->setChecked(this->config->openauto_config->guidanceAudioChannelEnabled());
     connect(speech_button, &QCheckBox::toggled,
-            [config = this->config](bool checked) { config->openauto_config->setSpeechAudioChannelEnabled(checked); });
+            [config = this->config](bool checked) { config->openauto_config->setGuidanceAudioChannelEnabled(checked); });
     group_layout->addWidget(speech_button);
 
     layout->addWidget(group, 1, Qt::AlignHCenter);
@@ -309,9 +345,9 @@ QLayout *OpenAutoPage::Settings::autoconnect_row_widget()
 
     Switch *toggle = new Switch();
     toggle->scale(this->arbiter.layout().scale);
-    toggle->setChecked(this->config->openauto_config->getAutoconnectBluetooth());
+    toggle->setChecked(this->config->openauto_config->getWirelessProjectionEnabled());
     connect(toggle, &Switch::stateChanged, [config = this->config](bool state){
-        config->openauto_config->setAutoconnectBluetooth(state);
+        config->openauto_config->setWirelessProjectionEnabled(state);
     });
     layout->addWidget(toggle, 1, Qt::AlignHCenter);
 
@@ -424,6 +460,7 @@ void OpenAutoPage::init()
 
     connect(this->frame, &OpenAutoFrame::toggle, [this](bool enable){
         this->setCurrentIndex(enable ? 1 : 0);
+        this->arbiter.android_auto().handler->setConnectionState(enable);
 
         if (Config::get_instance()->get_show_aa_connected()) {
             auto icon = this->button()->icon();

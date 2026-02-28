@@ -16,8 +16,14 @@
 #include "openauto/Configuration/Configuration.hpp"
 #include "openauto/Configuration/IConfiguration.hpp"
 #include "openauto/Configuration/RecentAddressesList.hpp"
+#include "openauto/Configuration/HandednessOfTrafficType.hpp"
+#include "openauto/Configuration/AudioOutputBackendType.hpp"
+#include "openauto/Configuration/BluetoothAdapterType.hpp"
 #include "openauto/Service/AndroidAutoEntityFactory.hpp"
 #include "openauto/Service/ServiceFactory.hpp"
+#include "aasdk_proto/ButtonCodeEnum.pb.h"
+#include "aasdk_proto/VideoFPSEnum.pb.h"
+#include "aasdk_proto/VideoResolutionEnum.pb.h"
 
 
 #include "app/pages/page.hpp"
@@ -33,7 +39,7 @@ class OpenAutoWorker : public QObject {
     OpenAutoWorker(std::function<void(bool)> callback, bool night_mode, QWidget *frame, Arbiter &arbiter);
     ~OpenAutoWorker();
 
-    inline void start() { this->app->waitForDevice(true); }
+    inline void start() { this->app->waitForUSBDevice(); }
     inline void set_opacity(unsigned int alpha) { this->service_factory.setOpacity(alpha); }
     inline void update_size() { this->service_factory.resize(); }
     inline void send_key_event(QKeyEvent *event) { this->service_factory.sendKeyEvent(event); }

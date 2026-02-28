@@ -1,0 +1,6 @@
+[submodule "third_party/aasdk"]
+	path = third_party/aasdk
+	url = https://github.com/nemocrk/aasdk.git
+[submodule "third_party/openauto"]
+	path = third_party/openauto
+	url = https://github.com/nemocrk/openauto.git

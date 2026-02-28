@@ -52,3 +52,14 @@ void AAHandler::navigationDistanceEvent(const aasdk::proto::messages::Navigation
 {
     emit aa_navigation_distance_event(distanceEvent);
 }
+
+void AAHandler::setNightMode(bool enabled)
+{
+    emit aa_night_mode_changed(enabled);
+    this->openauto::service::IAndroidAutoInterface::setNightMode(enabled);
+}
+
+void AAHandler::setConnectionState(bool connected)
+{
+    emit aa_connection_state_changed(connected);
+}

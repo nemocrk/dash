@@ -15,6 +15,8 @@ class AAHandler : public QObject, public openauto::service::IAndroidAutoInterfac
     void navigationTurnEvent(const aasdk::proto::messages::NavigationTurnEvent& turnEvent) override;
     void navigationDistanceEvent(const aasdk::proto::messages::NavigationDistanceEvent& distanceEvent) override;
     void injectButtonPressHelper(aasdk::proto::enums::ButtonCode::Enum buttonCode, Action::ActionState actionState);
+    void setNightMode(bool enabled);
+    void setConnectionState(bool connected);
 
    private:
 
@@ -24,4 +26,6 @@ class AAHandler : public QObject, public openauto::service::IAndroidAutoInterfac
     void aa_navigation_status_update(const aasdk::proto::messages::NavigationStatus& navStatus);
     void aa_navigation_turn_event(const aasdk::proto::messages::NavigationTurnEvent& turnEvent);
     void aa_navigation_distance_event(const aasdk::proto::messages::NavigationDistanceEvent& distanceEvent);
+    void aa_connection_state_changed(bool connected);
+    void aa_night_mode_changed(bool enabled);
 };
