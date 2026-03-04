@@ -3,6 +3,7 @@
 #include <QPushButton>
 
 #include "app/quick_views/quick_view.hpp"
+#include "DashLog.hpp"
 #include "app/utilities/icon_engine.hpp"
 #include "app/widgets/dialog.hpp"
 
@@ -157,7 +158,9 @@ QWidget *Dash::control_bar() const
     shutdown->setFlat(true);
     this->arbiter.forge().iconize("power_settings_new", shutdown, 26);
     layout->addWidget(shutdown);
-    connect(shutdown, &QPushButton::clicked, [dialog]{ dialog->open(); });
+    connect(shutdown, &QPushButton::clicked, [dialog]{ 
+        DASH_LOG(info) << "[Dash::control_bar] Power Off button clicked.";
+        dialog->open(); });
 
     auto exit = new QPushButton();
     exit->setFlat(true);
@@ -167,6 +170,7 @@ QWidget *Dash::control_bar() const
 
     widget->setVisible(this->arbiter.layout().control_bar.enabled);
     connect(&this->arbiter, &Arbiter::control_bar_changed, [widget](bool enabled){
+        DASH_LOG(info) << "[Dash::control_bar] close button clicked.";
         widget->setVisible(enabled);
     });
 
@@ -184,6 +188,7 @@ QWidget *Dash::power_control() const
     restart->setFlat(true);
     this->arbiter.forge().iconize("refresh", restart, 36);
     connect(restart, &QPushButton::clicked, [this]{
+        DASH_LOG(info) << "[Dash::power_control] Restart button clicked.";
         this->arbiter.settings().sync();
         sync();
         system(Session::System::REBOOT_CMD);
@@ -194,6 +199,7 @@ QWidget *Dash::power_control() const
     power_off->setFlat(true);
     this->arbiter.forge().iconize("power_settings_new", power_off, 36);
     connect(power_off, &QPushButton::clicked, [this]{
+        DASH_LOG(info) << "[Dash::power_control] Power off button clicked.";
         this->arbiter.settings().sync();
         sync();
         system(Session::System::SHUTDOWN_CMD);

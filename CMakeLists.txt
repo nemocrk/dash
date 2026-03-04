@@ -81,15 +81,15 @@ file(GLOB_RECURSE source_files ${sources_directory}/*.cpp ${include_directory}/*
 
 add_subdirectory(plugins)
 
-add_executable(dash ${source_files})
+add_executable(openDash ${source_files})
 
 include(${base_directory}/cmake_modules/gitversion.cmake)
 
-target_include_directories(dash PRIVATE
+target_include_directories(openDash PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
     )
 
-target_include_directories(dash SYSTEM PRIVATE
+target_include_directories(openDash SYSTEM PRIVATE
     ${Qt5Svg_INCLUDE_DIRS}
     ${Qt5Xml_INCLUDE_DIRS}
     ${Qt5WebSockets_INCLUDE_DIRS}
@@ -115,7 +115,7 @@ target_include_directories(dash SYSTEM PRIVATE
     ${include_directory}
     )
 
-target_link_libraries(dash
+target_link_libraries(openDash
     aasdk_proto
     aasdk
     openauto
@@ -141,4 +141,27 @@ target_link_libraries(dash
     ${TAGLIB_LIBRARIES}
     )
 
-install(TARGETS dash DESTINATION bin)
+install(TARGETS openDash DESTINATION bin)
+
+# Packaging Configuration
+set(CPACK_GENERATOR "DEB")
+set(CPACK_PACKAGE_NAME "dash-headunit")
+set(CPACK_PACKAGE_VERSION "0.3.0")
+set(CPACK_PACKAGE_CONTACT "Nemo <nemo@example.com>")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Dash Headunit Application")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libqt5multimedia5, libqt5bluetooth5, libqt5serialbus5, libqt5websockets5, libqt5svg5, libusb-1.0-0, libssl1.1 | libssl3, libprotobuf-dev")
+set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
+set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+
+# Detect Architecture
+if(NOT CPACK_DEBIAN_PACKAGE_ARCHITECTURE)
+  find_program(DPKG_CMD dpkg)
+  if(DPKG_CMD)
+    execute_process(COMMAND "${DPKG_CMD}" --print-architecture
+      OUTPUT_VARIABLE CPACK_DEBIAN_PACKAGE_ARCHITECTURE
+      OUTPUT_STRIP_TRAILING_WHITESPACE)
+  endif()
+endif()
+
+include(CPack)

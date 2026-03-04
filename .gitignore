@@ -68,3 +68,12 @@ openauto.ini
 plugins/vehicle/*
 !plugins/vehicle/test
 !plugins/vehicle/README.md
+
+
+# ThirdParty #
+##############
+third_party/
+
+# out #
+#######
+out/*.deb
