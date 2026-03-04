@@ -22,13 +22,19 @@ SocketCANBus::SocketCANBus(QString canInterface)
 SocketCANBus::~SocketCANBus()
 {
     DASH_LOG(info) << "[SocketCANBus] Disconnecting and deleting bus";
-    if(bus->state() == QCanBusDevice::ConnectedState){
+    if(bus != nullptr && bus->state() == QCanBusDevice::ConnectedState){
         bus->disconnectDevice();
     }
 }
 
 bool SocketCANBus::writeFrame(QCanBusFrame frame)
 {
+    if (bus == nullptr) {
+        if (socketCANAvailable) {
+            DASH_LOG(error) << "[SocketCANBus] Cannot write frame: bus not initialized";
+        }
+        return false;
+    }
     return bus->writeFrame(frame);
 }
 
@@ -41,6 +47,9 @@ SocketCANBus *SocketCANBus::get_instance()
 // QSerialBus readAllFrames introduced in 5.12 - Pi OS is stuck on 5.11, so implement our own
 QVector<QCanBusFrame> SocketCANBus::readAllFrames(int numFrames){
     QVector<QCanBusFrame> frames = QVector<QCanBusFrame>();
+    if (bus == nullptr) {
+        return frames;
+    }
     for(int i = 0; i<numFrames; i++){
         frames.append(bus->readFrame());
     }
@@ -49,6 +58,9 @@ QVector<QCanBusFrame> SocketCANBus::readAllFrames(int numFrames){
 
 void SocketCANBus::framesAvailable()
 {
+    if (bus == nullptr) {
+        return;
+    }
     int numFrames = bus->framesAvailable();
     if(numFrames>0){
         QVector<QCanBusFrame> frames =  readAllFrames(numFrames);
@@ -69,6 +81,12 @@ void SocketCANBus::framesAvailable()
 void SocketCANBus::registerFrameHandler(int id, std::function<void(QByteArray)> callback)
 {
     callbacks[id].push_back(callback);
+    if (bus == nullptr) {
+        if (socketCANAvailable) {
+            DASH_LOG(warning) << "[SocketCANBus] Cannot apply CAN filter: bus not initialized";
+        }
+        return;
+    }
     QCanBusDevice::Filter filter;
     filter.frameId = id;
     filter.frameIdMask = 0xFFF;

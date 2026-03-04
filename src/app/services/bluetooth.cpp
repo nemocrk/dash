@@ -33,15 +33,15 @@ Bluetooth::Bluetooth(Arbiter &arbiter)
     this->scan_timer->setSingleShot(true);
     connect(this->scan_timer, &QTimer::timeout, [this]{ this->stop_scan(); });
 
-    BluezQt::Manager *manager = new BluezQt::Manager();
-    BluezQt::InitManagerJob *job = manager->init();
+    manager_ = new BluezQt::Manager(this);
+    init_job_ = manager_->init();
 
     // Run the job with start() so we don't block this thread
-    job->start();
-    connect(job, &BluezQt::InitManagerJob::result, [this, manager]{
+    init_job_->start();
+    connect(init_job_, &BluezQt::InitManagerJob::result, this, [this] {
         DASH_LOG(info) << "[Bluetooth] Init complete!";
 
-        this->adapter = manager->usableAdapter();
+        this->adapter = manager_->usableAdapter();
         if (this->has_adapter()) {
             for (auto device : this->get_devices()) {
                 if (device->mediaPlayer() != nullptr) {
@@ -50,14 +50,14 @@ Bluetooth::Bluetooth(Arbiter &arbiter)
                 }
             }
 
-            connect(this->adapter.data(), &BluezQt::Adapter::deviceAdded, [this](BluezQt::DevicePtr device){
+            connect(this->adapter.data(), &BluezQt::Adapter::deviceAdded, this, [this](BluezQt::DevicePtr device) {
                 emit device_added(device);
             });
-            connect(this->adapter.data(), &BluezQt::Adapter::deviceChanged, [this](BluezQt::DevicePtr device) {
+            connect(this->adapter.data(), &BluezQt::Adapter::deviceChanged, this, [this](BluezQt::DevicePtr device) {
                 emit device_changed(device);
                 this->update_media_player(device);
             });
-            connect(this->adapter.data(), &BluezQt::Adapter::deviceRemoved, [this](BluezQt::DevicePtr device){
+            connect(this->adapter.data(), &BluezQt::Adapter::deviceRemoved, this, [this](BluezQt::DevicePtr device) {
                 emit device_removed(device);
             });
         }

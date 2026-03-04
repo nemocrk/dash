@@ -24,7 +24,17 @@ public:
                    std::function<void(bool)> callback,
                    bool nightMode)
         : f1x::openauto::autoapp::service::ServiceFactory(ioService, std::move(configuration)),
-          frame_(frame), callback_(std::move(callback)), nightMode_(nightMode) {}
+          frame_(frame), callback_(std::move(callback)), nightMode_(nightMode)
+    {
+        setNightMode(nightMode_);
+    }
+
+    f1x::openauto::autoapp::service::ServiceList create(aasdk::messenger::IMessenger::Pointer messenger) override
+    {
+        auto services = f1x::openauto::autoapp::service::ServiceFactory::create(std::move(messenger));
+        notifyConnectionState(true);
+        return services;
+    }
 
     void setAndroidAutoInterface(IAndroidAutoInterface* iface) { androidAutoInterface_ = iface; }
     void setOpacity(unsigned int alpha)
@@ -80,6 +90,31 @@ public:
     }
 
 private:
+    void notifyConnectionState(bool connected)
+    {
+        if (!callback_) {
+            return;
+        }
+
+        if (frame_ != nullptr) {
+            QMetaObject::invokeMethod(
+                frame_,
+                [callback = callback_, connected]() { callback(connected); },
+                Qt::QueuedConnection);
+            return;
+        }
+
+        if (qApp != nullptr) {
+            QMetaObject::invokeMethod(
+                qApp,
+                [callback = callback_, connected]() { callback(connected); },
+                Qt::QueuedConnection);
+            return;
+        }
+
+        callback_(connected);
+    }
+
     static int mapButtonCode(aap_protobuf::service::media::sink::message::KeyCode buttonCode,
                              projection::WheelDirection wheelDirection)
     {

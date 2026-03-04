@@ -1,6 +1,7 @@
 #include <QApplication>
 #include <QDir>
 
+#include "DashLog.hpp"
 #include "app/config.hpp"
 
 Config::Config()
@@ -34,6 +35,15 @@ Config::Config()
     for (auto key : this->settings.childKeys())
         this->launcher_plugins.append(this->settings.value(key, QString()).toString());
     this->settings.endGroup();
+
+    DASH_LOG(info) << "[Config] OpenAuto config snapshot: bluetoothAdapterType="
+                   << static_cast<uint32_t>(openauto_config->getBluetoothAdapterType())
+                   << ", bluetoothAdapterAddress="
+                   << (openauto_config->getBluetoothAdapterAddress().empty() ? "<empty>" : openauto_config->getBluetoothAdapterAddress())
+                   << ", wirelessProjectionEnabled=" << openauto_config->getWirelessProjectionEnabled()
+                   << ", touchscreenEnabled=" << openauto_config->getTouchscreenEnabled()
+                   << ", videoResolution=" << static_cast<uint32_t>(openauto_config->getVideoResolution())
+                   << ", videoFPS=" << static_cast<uint32_t>(openauto_config->getVideoFPS());
 }
 
 Config *Config::get_instance()

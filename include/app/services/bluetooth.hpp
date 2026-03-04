@@ -2,6 +2,8 @@
 
 #include <BluezQt/Adapter>
 #include <BluezQt/Device>
+#include <BluezQt/InitManagerJob>
+#include <BluezQt/Manager>
 #include <BluezQt/MediaPlayer>
 #include <BluezQt/MediaPlayerTrack>
 #include <QList>
@@ -9,8 +11,10 @@
 #include <QMap>
 #include <QObject>
 #include <QPair>
+#include <QPointer>
 #include <QPushButton>
 #include <QString>
+#include <QTimer>
 
 #include "app/widgets/progress.hpp"
 
@@ -44,7 +48,9 @@ class Bluetooth : public QObject {
 
     BluezQt::AdapterPtr adapter;
     BluezQt::DevicePtr media_player_device;
-    QTimer *scan_timer;
+    QTimer *scan_timer = nullptr;
+    BluezQt::Manager *manager_ = nullptr;
+    BluezQt::InitManagerJob *init_job_ = nullptr;
 
    signals:
     void init();
@@ -56,4 +62,3 @@ class Bluetooth : public QObject {
     void media_player_track_changed(BluezQt::MediaPlayerTrack);
     void scan_status(bool);
 };
-

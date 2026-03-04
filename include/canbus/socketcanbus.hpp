@@ -21,7 +21,7 @@ class SocketCANBus : public ICANBus
 
     private:
         bool socketCANAvailable = false;
-        QCanBusDevice *bus;
+        QCanBusDevice *bus = nullptr;
         std::map<int, std::vector<std::function<void(QByteArray)>>> callbacks;
         QList<QCanBusDevice::Filter> filterList;
 
@@ -31,4 +31,3 @@ class SocketCANBus : public ICANBus
     private slots:
         void framesAvailable();
 };
-

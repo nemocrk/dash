@@ -25,10 +25,16 @@ OpenAutoWorker::OpenAutoWorker(std::function<void(bool)> callback, bool night_mo
       app(std::make_shared<openauto::App>(io_service, usb_wrapper, tcp_wrapper, android_auto_entity_factory, usb_hub,
                                           connected_accessories_enumerator))
 {
+    this->app->setConnectionStateCallback([callback](bool active) {
+        QMetaObject::invokeMethod(
+            qApp,
+            [callback, active]() { callback(active); },
+            Qt::QueuedConnection);
+    });
+
     this->create_usb_workers();
     this->create_io_service_workers();
 
-    this->app->waitForUSBDevice();
     AAHandler *aa_handler = arbiter.android_auto().handler;
     service_factory.setAndroidAutoInterface(aa_handler);
     aa_handler->setServiceFactory(&service_factory);
@@ -479,6 +485,7 @@ void OpenAutoPage::init()
 
     this->addWidget(this->connect_msg());
     this->addWidget(this->frame);
+    this->worker->start();
 }
 
 void OpenAutoPage::resizeEvent(QResizeEvent *event)
